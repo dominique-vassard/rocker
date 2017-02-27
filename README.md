@@ -5,8 +5,9 @@ rocker is a command line tool that allow to use a private registry via CLI inste
 It is based on [Docker Registry API V2] (https://docs.docker.com/registry/spec/api/)
 
 ## Minimum wanted features
-- [ ] rocker login -> Log into registry (requires docker?)
-- [ ] rocker setup -> save setup (url, login / password)
+- [X] rocker login -> Log into registry (requires docker?)
+- [X] rocker logout -> Logout from registry
+- [X] option to save credentials
 - [ ] rocker ping -> Ping the registry
 - [ ] rocker catalog -> Return repositories list
 - [ ] rocker tags <repo_name> -> List all tags of a given repository
