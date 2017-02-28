@@ -1,5 +1,7 @@
 import os
+import rest
 import click
+import base64
 import subprocess
 import ConfigParser
 
@@ -20,7 +22,7 @@ def rocker(ctx):
 @click.option('--host', '-h', type=str)
 @click.pass_context
 def login(ctx, username, password, host):
-    """Login to private docker registry
+    """Login to private docker registry.
 
     All options are optional as credentiasl can be retrieved from file
 
@@ -93,6 +95,95 @@ def ping(ctx):
     click.echo(ctx.obj)
 
 
+@click.command()
+@click.pass_context
+def catalog(ctx):
+    """List repositories
+
+    Arguments:
+        tx (object): the context
+        repo_name (str): A valid repository name
+
+    Raises:
+        (click.ClickException) If user is not logged in
+        (click.ClickException) If an error occured
+    """
+    if not ctx.obj.get('credentials', False):
+        msg = click.style("You need to login before using this command.",
+                          fg="red")
+        raise click.ClickException(msg)
+    username, password, host, _ = ctx.obj['credentials']
+    token = base64.b64encode(username + ":" + password)
+    try:
+        repo = rest.get_catalog(host, token)
+        if repo:
+            click.echo("\n".join(repo))
+        else:
+            click.echo("No repositories")
+    except Exception as e:
+        raise click.ClickException(click.style(str(e), fg="red"))
+
+
+@click.command()
+@click.argument("repo_name")
+@click.pass_context
+def tags(ctx, repo_name):
+    """List tag for the given repository
+
+    Arguments:
+        ctx (object): the context
+        repo_name (str): A valid repository name
+
+    Raises:
+        (click.ClickException) If user is not logged in
+        (click.ClickException) If an error occured
+    """
+    if not ctx.obj.get('credentials', False):
+        msg = click.style("You need to login before using this command.",
+                          fg="red")
+        raise click.ClickException(msg)
+
+    username, password, host, _ = ctx.obj['credentials']
+    token = base64.b64encode(username + ":" + password)
+    try:
+        tags = rest.get_tags_list(host, token, repo_name)
+        if tags:
+            click.echo("\n".join(tags))
+        else:
+            click.echo("No tags")
+    except Exception as e:
+        raise click.ClickException(click.style(str(e), fg="red"))
+
+
+@click.command()
+@click.argument("image_name")
+@click.pass_context
+def delete(ctx, image_name):
+    """Delete image
+
+    Arguments:
+        ctx (object): the context
+        image_name (str): THe image to delete (repo_name:tag)
+
+    Raises:
+        (click.ClickException) If user is not logged in
+        (click.ClickException) If delete is bnot successful
+    """
+    if not ctx.obj.get('credentials', False):
+        msg = click.style("You need to login before using this command.",
+                          fg="red")
+        raise click.ClickException(msg)
+
+    username, password, host, _ = ctx.obj['credentials']
+    token = base64.b64encode(username + ":" + password)
+    repo_name, tag = image_name.split(":")
+    try:
+        rest.delete_image(host, token, repo_name, tag)
+        click.echo("{} succesfully deleted.".format(image_name))
+    except Exception as e:
+        raise click.ClickException(click.style(str(e), fg="red"))
+
+
 def check_docker():
     """Check if docker is installed
 
@@ -149,10 +240,16 @@ def save_credentials(username, password, host, persistent=False):
         config.set("credentials", "host", host)
         config.set("credentials", "username", username)
         config.set("credentials", "password", password)
+        # config.set("credentials", "token",
+        #            base64.b64encode(username + ":" + password))
         config.set("credentials", "persistent", str(persistent))
         config.write(cfg_file)
+
 
 # define commands
 rocker.add_command(login)
 rocker.add_command(logout)
 rocker.add_command(ping)
+rocker.add_command(catalog)
+rocker.add_command(tags)
+rocker.add_command(delete)
