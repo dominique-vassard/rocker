@@ -10,19 +10,9 @@ def get_catalog(url, auth_token):
 
     Returns:
         (list): A list of repositories
-
-    Raises:
-        (Exception): In case of bad response status
     """
-    response = requests.get(url + '/v2/_catalog',
-                            headers={'Authorization': 'Basic ' + auth_token})
-    result = []
-
-    if not response.status_code == requests.codes.ok:
-        raise response.raise_for_status()
-
-    if response.json().get('repositories'):
-        result = response.json().get('repositories')
+    response, _ = get_response(url + '/v2/_catalog', auth_token)
+    result = response.get('repositories', [])
     return result
 
 
@@ -36,19 +26,10 @@ def get_tags_list(url, auth_token, repo_name):
 
     Returns:
         (list): A list of tags
-
-    Raises:
-        (Exception): In case of bad response status
     """
-    response = requests.get(url + '/v2/' + repo_name + '/tags/list',
-                            headers={'Authorization': 'Basic ' + auth_token})
-    result = []
-
-    if not response.status_code == requests.codes.ok:
-        raise response.raise_for_status()
-
-    if response.json().get('tags'):
-        result = response.json().get('tags')
+    response, _ = get_response(url + '/v2/' + repo_name + '/tags/list',
+                               auth_token)
+    result = response.get('tags', [])
     return result
 
 
@@ -65,32 +46,76 @@ def delete_image(url, auth_token, repo_name, tag):
         (bool): True if success
 
     Raises:
-        (Exception): In case of bad response status
-                     If it's not possible to retrieve digest
+        (Exception): If it's not possible to retrieve digest
     """
-    headers = {
-        'Authorization': 'Basic ' + auth_token,
+
+    # First, we need to get image digest
+    add_headers = {
         'Accept': 'application/vnd.docker.distribution.manifest.v2+json'
     }
-    manifest = requests.get(url + '/v2/' + repo_name + '/manifests/' + tag,
-                            headers=headers)
+    manifest_url = url + '/v2/' + repo_name + '/manifests/' + tag
+    response, headers = get_response(manifest_url, auth_token,
+                                     add_headers=add_headers, verb="HEAD")
 
-    if not manifest.status_code == requests.codes.ok:
-        raise manifest.raise_for_status()
-
-    digest = manifest.headers['Docker-Content-Digest']
+    digest = headers.get('Docker-Content-Digest', False)
     if not digest:
         raise Exception('Unable to retrieve digest')
 
-    delete = requests.delete(url + '/v2/' + repo_name + '/manifests/' + digest,
-                             headers={'Authorization': 'Basic ' + auth_token})
+    # And ten delete the image with the retrieved manifest
+    delete_url = url + '/v2/' + repo_name + '/manifests/' + digest
+    del_response, _ = get_response(delete_url, auth_token, verb="DELETE",
+                                   status_ok=202)
 
-    if not delete.status_code == 202:  # This the valid returned status code!
-        raise delete.raise_for_status()
-
-    if delete.json().get('errors'):
-        errors = delete.json().get('errors')
-        print errors
+    if del_response.get('errors', False):
+        errors = del_response.get('errors')
         raise Exception(errors.code + ' -> ' + errors.message)
 
     return True
+
+
+def get_response(url, auth_token, add_headers=None, verb="GET", status_ok=200):
+    """Calls url ans send json response aif avalaible and headers
+
+    Arguments:
+        url (str)- Registry host url
+        auth_token (str): THe authorization token
+
+    Keyword Arguments:
+        add_headers (dict): Additianl headers (default: None)
+        verb (str): The HTTP verb to use (default: "GET")
+        status_ok (int): The valid status code (default: 200)
+
+    Returns:
+        (tuple): A tuple consisting of:
+        ::
+            (
+                (dict): the json response,
+                (dict): the response headers
+            )
+
+    Raises:
+        (Exception): In case of unknwon verb
+        (Exception): In case of bad response status
+    """
+    headers = {"Authorization": "Basic {}".format(auth_token)}
+    if add_headers:
+        headers.update(add_headers)
+
+    if verb == "GET":
+        response = requests.get(url, headers=headers)
+    elif verb == "HEAD":
+        response = requests.head(url, headers=headers)
+    elif verb == "DELETE":
+        response = requests.delete(url, headers=headers)
+    else:
+        raise Exception("Unknown verb [{}].".format(verb))
+
+    if not response.status_code == status_ok:
+        raise response.raise_for_status()
+
+    try:
+        resp_json = response.json()
+    except Exception:
+        resp_json = {}
+
+    return (resp_json, response.headers)
